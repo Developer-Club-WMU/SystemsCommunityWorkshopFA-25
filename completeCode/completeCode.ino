@@ -15,7 +15,8 @@ const char* WIFI_PASSWORD = "wifi_password";
 const char* AWS_ENDPOINT  = "endpoint_from_aws_iot_core_console";   // e.g. abcdef123456-ats.iot.us-east-1.amazonaws.com should be visible under domain management in IoT core dash
 const int   AWS_PORT      = 8883;
 const char* THINGNAME     = "yourNodeName";
-const char* PUB_TOPIC     = "yourNodeName/data";  // ensure your policy allows publishing here
+const char* PUB_TOPIC     = "yourNodeName/data";     // ensure your policy allows publishing here
+const char* SUB_TOPIC     = "yourNodeName/commands"; // ensure your policy allows subscribing and receiving here
 
 /*
  * Certificates: 
@@ -24,9 +25,9 @@ const char* PUB_TOPIC     = "yourNodeName/data";  // ensure your policy allows p
  *   Paste the exact file contents in the spaces provided
  *   You will need the 3 files from when you create your IoT thing
  *   RootCA Cert, Device Cert, Private Key (You might as well download the public key despite the fact it isnt required!)
-*/
+ */
 
-// AmazonRootCA1.pem
+// AmazonRootCA1.pem  (AWS thing Root CA certificate)
 static const char AWS_ROOT_CA[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 ------------Paste your Root CA Cert here-----------
@@ -81,47 +82,103 @@ MQTTClient mqtt(256);
 // Helper Functions
 
 // This connects us to the Wifi
-void connectWiFi() {
+void connectWiFi()
+{
   Serial.printf("Connecting to WiFi: %s\n", WIFI_SSID);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) { delay(400); Serial.print("."); }
+
+  while (WiFi.status() != WL_CONNECTED)
+    {
+      delay(400);
+      Serial.print(".");
+    }
+
   Serial.printf("\nWiFi OK  IP=%s\n", WiFi.localIP().toString().c_str());
+}
+
+// JSON-aware message parser for subscribed topic
+// This parses received commands {"message":"led_on"} or {"message":"led_off"} and turns the external led on or off
+void messageHandler(String &topic, String &payload)
+{
+  Serial.println(">>> Message Received");
+  Serial.println("Topic: " + topic);
+  Serial.println("Payload: " + payload);
+
+  if (topic == SUB_TOPIC)
+    {
+      if (payload.indexOf("led_on") != -1)
+        {
+          digitalWrite(LED_PIN, HIGH);
+          Serial.println("LED turned ON");
+        }
+      else if (payload.indexOf("led_off") != -1)
+        {
+          digitalWrite(LED_PIN, LOW);
+          Serial.println("LED turned OFF");
+        }
+      else
+        {
+          Serial.println("Unknown command payload");
+        }
+    }
 }
 
 // For checking connectivity with AWS
 // For the various status code please refer to AWS documentation
 // PS: They have the tendency to keep changing stuff all the time, so make sure you go through the aws and the library docs
-void ensureMqtt() {
-  while (!mqtt.connected()) {
-    Serial.print("Connecting MQTT to AWS as clientId=");
-    Serial.println(THINGNAME);
-    if (mqtt.connect(THINGNAME)) {
-      Serial.println("MQTT connected");
-    } else {
-      Serial.printf("MQTT connect failed, status=%d. Retrying...\n", mqtt.lastError());
-      delay(1500);
+void ensureMqtt()
+{
+  while (!mqtt.connected())
+    {
+      Serial.print("Connecting MQTT to AWS as clientId=");
+      Serial.println(THINGNAME);
+
+      if (mqtt.connect(THINGNAME))
+        {
+          Serial.println("MQTT connected");
+
+          // subscribe once connected
+          mqtt.onMessage(messageHandler);
+
+          if (mqtt.subscribe(SUB_TOPIC))
+            Serial.printf("Subscribed to topic: %s\n", SUB_TOPIC);
+          else
+            Serial.printf("Failed to subscribe to topic: %s\n", SUB_TOPIC);
+        }
+      else
+        {
+          Serial.printf("MQTT connect failed, status=%d. Retrying...\n",
+                        mqtt.lastError());
+          delay(1500);
+        }
     }
-  }
 }
 
 // To make sure if we are online and not stuck without internet
-// Just a glorified ping command
-void testInternet() {
+// Just a glorified ping command (not strictly required but just for debug use (Added since campus wifi doesnt play nice with MQTT connections)
+void testInternet()
+{
   WiFiClient testClient;
   Serial.print("Testing Internet via google.com ... ");
-  if (testClient.connect("google.com", 80)) {
-    Serial.println("Online");
-    testClient.stop();
-  } else {
-    Serial.println("No Internet access (can't reach google.com)");
-  }
+
+  if (testClient.connect("google.com", 80))
+    {
+      Serial.println("Online");
+      testClient.stop();
+    }
+  else
+    {
+      Serial.println("No Internet access (can't reach google.com)");
+    }
 }
 
 // Publishes the data to the topic in AWS
-void publishSensor(float t, float h) {
+void publishSensor(float t, float h)
+{
   char payload[128];
-  snprintf(payload, sizeof(payload), "{\"temperature\":%.2f,\"humidity\":%.2f}", t, h);
+  snprintf(payload, sizeof(payload),
+           "{\"temperature\":%.2f,\"humidity\":%.2f}", t, h);
   bool ok = mqtt.publish(PUB_TOPIC, payload);
   Serial.printf("Publish %s: %s\n", ok ? "OK" : "FAIL", payload);
 }
@@ -134,7 +191,8 @@ void publishSensor(float t, float h) {
  * Also it is a very bad practice if you need to initialize something repeatedly it should ideally be initialized once per app
  * And it needs to stay that way unless the hardware config is changed such as switching the GPIO pins for connections, etc
  */
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   pinMode(LED_PIN, OUTPUT);
   dht.begin();
@@ -144,10 +202,12 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
   
   // OLED init
-  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
-    Serial.println(F("SSD1306 init failed"));
-    while (true) {}
-  }
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR))
+    {
+      Serial.println(F("SSD1306 init failed"));
+      while (true) {}
+    }
+
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
@@ -162,6 +222,7 @@ void setup() {
   net.setCACert(AWS_ROOT_CA);
   net.setCertificate(DEVICE_CERT);
   net.setPrivateKey(DEVICE_PRIVATE_KEY);
+
   configTime(0, 0, "pool.ntp.org", "time.nist.gov"); // Required to make sure the time is correct on ESP-32 because if not you will face ton of TLS errors and its a pain to debug trust me
 
   // Configure MQTT over TLS
@@ -182,10 +243,14 @@ void setup() {
  * We put in all the code that needs to be running constantly
  * So basically all the monitoring and your actions go here
  */
-void loop() {
+void loop()
+{
   // keep connections alive
-  if (WiFi.status() != WL_CONNECTED) connectWiFi();
-  if (!mqtt.connected()) ensureMqtt();
+  if (WiFi.status() != WL_CONNECTED)
+    connectWiFi();
+  if (!mqtt.connected())
+    ensureMqtt();
+
   mqtt.loop();
 
   // Read the data from the sensor
@@ -199,29 +264,24 @@ void loop() {
   display.println(F("Temp & Humidity"));
 
   // If for any reason it returns NAN values its usually either sensor got disconnected or rarely the sensor failed
-  if (isnan(h) || isnan(t)) {
-    display.setCursor(0, 16);
-    display.println(F("Sensor Error!"));
-    Serial.println(F("DHT read failed"));
-  }
+  if (isnan(h) || isnan(t))
+    {
+      display.setCursor(0, 16);
+      display.println(F("Sensor Error!"));
+      Serial.println(F("DHT read failed"));
+    }
   // Write the sensor values to OLED display
-  else {
-    display.setTextSize(2);
-    display.setCursor(0, 20);
-    display.printf("%.1fC", t);
-    display.setCursor(0, 44);
-    display.printf("%.1f%%", h);
+  else
+    {
+      display.setTextSize(2);
+      display.setCursor(0, 20);
+      display.printf("%.1fC", t);
+      display.setCursor(0, 44);
+      display.printf("%.1f%%", h);
 
-    publishSensor(t, h);
-  }
-
-  // This displays all the values
+      publishSensor(t, h);
+    }
+    
   display.display();
-
-  // Blinks the external LED and introduces a 5s delay between each read write cycle
-  // delay() takes values in milliseconds
-  digitalWrite(LED_PIN, HIGH); 
-  delay(300);
-  digitalWrite(LED_PIN, LOW);  
-  delay(4700); // 5s cycle
+  delay(5000); // 5 sec delay 
 }
