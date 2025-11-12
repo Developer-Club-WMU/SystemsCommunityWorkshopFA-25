@@ -6,47 +6,7 @@
 #include <Adafruit_SSD1306.h>
 #include <DHT.h>
 #include <WiFiClient.h>
-
-// WiFi Credentials
-const char* WIFI_SSID     = "wifi_network_name";
-const char* WIFI_PASSWORD = "wifi_password";
-
-// AWS IoT Core Config
-const char* AWS_ENDPOINT  = "endpoint_from_aws_iot_core_console";   // e.g. abcdef123456-ats.iot.us-east-1.amazonaws.com should be visible under domain management in IoT core dash
-const int   AWS_PORT      = 8883;
-const char* THINGNAME     = "yourNodeName";
-const char* PUB_TOPIC     = "yourNodeName/data";     // ensure your policy allows publishing here
-const char* SUB_TOPIC     = "yourNodeName/commands"; // ensure your policy allows subscribing and receiving here
-
-/*
- * Certificates: 
- *   These are very important never push these to repo or make public
- *   unless you want some random compromising your IoT network or you want to get billed your savings :D
- *   Paste the exact file contents in the spaces provided
- *   You will need the 3 files from when you create your IoT thing
- *   RootCA Cert, Device Cert, Private Key (You might as well download the public key despite the fact it isnt required!)
- */
-
-// AmazonRootCA1.pem  (AWS thing Root CA certificate)
-static const char AWS_ROOT_CA[] PROGMEM = R"EOF(
------BEGIN CERTIFICATE-----
-------------Paste your Root CA Cert here-----------
------END CERTIFICATE-----
-)EOF";
-
-// *-certificate.pem.crt (AWS thing device certificate)
-static const char DEVICE_CERT[] PROGMEM = R"KEY(
------BEGIN CERTIFICATE-----
-------------Paste your Device Certificate here-----------
------END CERTIFICATE-----
-)KEY";
-
-// *-private.pem.key (AWS thing device private key)
-static const char DEVICE_PRIVATE_KEY[] PROGMEM = R"KEY(
------BEGIN RSA PRIVATE KEY-----
-------------Paste your Private key here-----------
------END RSA PRIVATE KEY-----
-)KEY";
+#include "secrets.h"
 
 /* 
  * DHT 22 (We are using the GPIO pin D4 so we define the DHTPIN as 4
@@ -68,7 +28,6 @@ DHT dht(DHTPIN, DHTTYPE);
 #define OLED_RESET -1
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-#define OLED_RESET -1
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // LED Pin
@@ -97,7 +56,7 @@ void connectWiFi()
   Serial.printf("\nWiFi OK  IP=%s\n", WiFi.localIP().toString().c_str());
 }
 
-// JSON-aware message parser for subscribed topic
+// JSON message parser for subscribed topic
 // This parses received commands {"message":"led_on"} or {"message":"led_off"} and turns the external led on or off
 void messageHandler(String &topic, String &payload)
 {
@@ -195,6 +154,7 @@ void setup()
 {
   Serial.begin(115200);
   pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);  // Ensure LED starts OFF
   dht.begin();
 
   // I2C init
@@ -227,7 +187,7 @@ void setup()
 
   // Configure MQTT over TLS
   // P.S.. TLS can be annoying to work with at times but its what keeps everything secure and is a major deterent to the Man in the Middle Attacks which hardware is prone to regularly
-  mqtt.begin(AWS_ENDPOINT, AWS_PORT, net);
+  mqtt.begin(AWS_IOT_ENDPOINT, AWS_PORT, net);
 
   // Make sure we are connected to AWS
   ensureMqtt();
