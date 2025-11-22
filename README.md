@@ -8,7 +8,7 @@ The Primary Repository for the Systems Workshop FA-25 (Introduction to IoT and C
 
 2. Libraries install
 
-3. CH340G USB Driver Install
+3. USB Driver Install (CH340G or CP2102) Do let us know if you face any troubles here!
 
 3. AWS console login verification
 
