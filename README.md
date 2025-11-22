@@ -25,3 +25,9 @@ Adafruit Sensor: https://github.com/adafruit/Adafruit_Sensor
 Adafruit DHT Sensor: https://github.com/adafruit/DHT-sensor-library
 
 Arduino MQTT: https://github.com/256dpi/arduino-mqtt
+
+## Git Basics link
+
+Here's a great resource that you can use to learn version management with git!
+
+https://www.w3schools.com/git/default.asp?remote=github
